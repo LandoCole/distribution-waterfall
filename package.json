@@ -1,0 +1,17 @@
+{
+  "name": "distribution-waterfall",
+  "version": "1.0.0",
+  "description": "Private fund distribution waterfall (European and American) and a Monte Carlo of simulated funds, in plain JavaScript.",
+  "type": "module",
+  "main": "src/waterfall.js",
+  "exports": {
+    ".": "./src/waterfall.js",
+    "./simulation": "./src/simulation.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "demo": "python3 -m http.server 8080"
+  },
+  "license": "MIT",
+  "author": "Landon Thornton"
+}

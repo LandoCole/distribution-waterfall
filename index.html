@@ -1,0 +1,1326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Distribution waterfall · Landon Thornton</title>
+<meta name="description" content="Interactive private-fund distribution waterfall (European and American) with a 3,000-fund Monte Carlo, in plain JavaScript.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+/* Layout: a project sheet from landonthornton.com. Terms in a left rail, the Sankey as a drafted figure, then the ledger and plain-language terms in the site's label/body columns on the 24px dot grid. */
+:root{
+  /* Flexoki (stephango.com/flexoki), neutrals only, as on landonthornton.com */
+  --paper:#FFFCF0;
+  --ink:#100F0F;
+  --graphite:#6F6E69;
+  --rule:rgba(16,15,15,.16);
+  --dot:rgba(16,15,15,.16);
+  --panel:#E6E4D9;
+  --wash:rgba(255,252,240,.94);
+  --serif:"Michelangelus","EB Garamond","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --gutter:max(16px, env(safe-area-inset-left, 0px), calc((100vw - 1040px) / 2 + 16px));
+  --gutter-r:max(16px, env(safe-area-inset-right, 0px), calc((100vw - 1040px) / 2 + 16px));
+  --line-top:0 -0.5px 0 0 var(--rule), inset 0 0.5px 0 0 var(--rule), 0 -1.75px 0 0 var(--paper), inset 0 1.75px 0 0 var(--paper);
+  --line-box-gap:0 0 0 1.75px var(--paper), inset 0 0 0 1.75px var(--paper);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--paper:#100F0F;--ink:#CECDC3;--graphite:#878580;--rule:rgba(206,205,195,.16);--dot:rgba(206,205,195,.12);--panel:#282726;--wash:rgba(16,15,15,.94);color-scheme:dark}
+}
+:root[data-theme="dark"]{--paper:#100F0F;--ink:#CECDC3;--graphite:#878580;--rule:rgba(206,205,195,.16);--dot:rgba(206,205,195,.12);--panel:#282726;--wash:rgba(16,15,15,.94);color-scheme:dark}
+
+body{
+  background-color:var(--paper);
+  background-image:radial-gradient(circle at 12px 12px, var(--dot) 1.15px, transparent 1.65px);
+  background-size:24px 24px;
+  background-position:calc(var(--gutter) - 12px) -12px;
+  color:var(--ink);
+  font-family:var(--serif);
+  font-size:19px;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--ink);text-decoration-thickness:1px;text-underline-offset:4px}
+:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;min-height:48px;
+  padding-left:var(--gutter);padding-right:var(--gutter-r);padding-block:0;background:var(--wash);box-shadow:0 0.5px 0 0 var(--rule);
+  font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+.topbar span:last-child{color:var(--graphite)}
+.topbar .home{color:inherit;text-decoration:none}
+.topbar .home:hover{text-decoration:underline}
+
+.wrap{padding-left:var(--gutter);padding-right:var(--gutter-r);padding-bottom:48px}
+.sec{display:grid;grid-template-columns:168px minmax(0,672px);gap:0 48px;padding-block:48px;box-shadow:var(--line-top)}
+.sec.first{box-shadow:none}
+.label{font-family:var(--mono);font-weight:400;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--graphite);margin:0;line-height:24px}
+.body{min-width:0}
+.body > p{margin:0 0 24px;line-height:24px;max-width:62ch;text-wrap:pretty}
+.body > p:last-child{margin-bottom:0}
+h1{font-weight:400;font-size:clamp(44px,6vw,64px);line-height:72px;letter-spacing:-.015em;margin:0 0 24px;text-wrap:balance}
+.lead{font-style:italic;font-size:clamp(22px,2.4vw,26px);color:var(--graphite)}
+.body > p.lead{line-height:48px;margin-bottom:24px;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:0 24px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--graphite)}
+.body > p.meta{line-height:24px}
+
+/* ---------- the tool ---------- */
+.tool{display:grid;grid-template-columns:216px minmax(0,1fr);gap:24px 48px;padding-block:48px;box-shadow:var(--line-top)}
+.controls{display:grid;align-content:start;gap:24px;min-width:0}
+.group{display:grid;gap:0}
+.seg{display:grid;grid-template-columns:1fr 1fr;height:48px;outline:1px solid var(--ink);outline-offset:-0.5px;box-shadow:var(--line-box-gap);background:var(--paper)}
+.seg button{border:0;background:none;color:var(--ink);font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;padding:0}
+.seg button + button{box-shadow:inset 0.5px 0 0 var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.seg button:not([aria-pressed="true"]):hover{background:var(--panel)}
+.ctl{display:grid;grid-template-rows:24px 24px auto}
+.ctl-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;line-height:24px}
+.ctl-head label{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--graphite)}
+.ctl-head output{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.hint{margin:0;font-style:italic;font-size:15px;line-height:24px;color:var(--graphite)}
+input[type=range]{display:block;-webkit-appearance:none;appearance:none;width:100%;height:24px;margin:0;background:transparent;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:1px;background:var(--ink)}
+input[type=range]::-moz-range-track{height:1px;background:var(--ink)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;margin-top:-7px;border-radius:50%;background:var(--paper);border:1px solid var(--ink);box-shadow:0 0 0 2px var(--paper)}
+input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:var(--paper);border:1px solid var(--ink)}
+input[type=range]:active::-webkit-slider-thumb{background:var(--ink)}
+input[type=range]:active::-moz-range-thumb{background:var(--ink)}
+input[type=range]:focus-visible{outline:none}
+input[type=range]:focus-visible::-webkit-slider-thumb{outline:2px solid var(--ink);outline-offset:2px}
+input[type=range]:focus-visible::-moz-range-thumb{outline:2px solid var(--ink);outline-offset:2px}
+.reset{justify-self:start;text-align:left;height:48px;padding:0;background:none;border:0;color:var(--ink);font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+
+.controls{grid-row:span 2}
+.fig{margin:0;min-width:0;display:grid;gap:0}
+.deals{grid-column:2;display:grid;justify-items:start;min-width:0}
+.deals .tablebox{width:round(down, 100%, 24px)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+th.rm,td.rm{width:36px;text-align:right}
+.x{display:inline-grid;place-items:center;width:32px;height:32px;padding:0;background:none;border:0;color:var(--graphite);cursor:pointer;vertical-align:middle}
+.x:hover{color:var(--ink);background:var(--panel)}
+.x:disabled{opacity:.3;cursor:default;background:none}
+.deal-actions{display:flex;flex-wrap:wrap;align-items:center;gap:0 24px;margin-top:24px;width:100%}
+.add-hint{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--graphite)}
+.deal-actions .reset{margin-left:auto}
+.more:disabled{opacity:.35;cursor:default;background:none;color:var(--ink)}
+.dname{box-sizing:border-box;width:100%;max-width:240px;height:36px;padding:0 6px;margin-left:-6px;border:0;border-radius:0;background:transparent;box-shadow:inset 0 -1px 0 0 var(--rule);color:var(--ink);font-family:var(--serif);font-size:18px}
+.dname:hover{box-shadow:inset 0 -1px 0 0 var(--graphite)}
+.dname:focus{outline:none;background:var(--panel);box-shadow:inset 0 -2px 0 0 var(--ink)}
+.dname::placeholder{color:var(--graphite);opacity:1}
+.money{display:inline-flex;align-items:baseline;gap:3px;color:var(--graphite)}
+.money input{box-sizing:border-box;width:84px;height:32px;padding:0 6px;border:0;border-radius:0;background:transparent;box-shadow:inset 0 -1px 0 0 var(--ink);color:var(--ink);font:inherit;font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
+.money input:hover{background:var(--panel)}
+.money input:focus{outline:none;background:var(--panel);box-shadow:inset 0 -2px 0 0 var(--ink)}
+.money input[aria-invalid="true"]{color:var(--graphite);box-shadow:inset 0 -2px 0 0 var(--graphite)}
+td.loss{color:var(--graphite)}
+.stage{overflow-x:auto;background:var(--paper);outline:1px solid var(--rule);outline-offset:-0.5px;box-shadow:var(--line-box-gap)}
+.stage svg{display:block}
+.fig figcaption{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:0 24px;font-family:var(--mono);font-size:11px;line-height:48px;letter-spacing:.04em;color:var(--graphite)}
+.key{display:flex;flex-wrap:wrap;gap:0 18px}
+.key span{display:inline-flex;align-items:center;gap:8px}
+.key svg{flex:none}
+
+/* Sankey marks */
+.lk.up{fill:var(--ink);fill-opacity:.075}
+.lk.lp{fill:var(--ink);fill-opacity:.17}
+.lk.gp{fill:url(#hatch)}
+.hb{fill:var(--ink);fill-opacity:.05}
+.hl{stroke:var(--ink);stroke-width:1.1}
+.st{fill:none;stroke:var(--ink);stroke-width:2.2;stroke-linecap:round;stroke-dasharray:0 11;stroke-opacity:.42;animation:flow .32s linear infinite}
+.st.gp{stroke-opacity:.9}
+.st.lp{stroke-opacity:.6}
+@keyframes flow{to{stroke-dashoffset:-11}}
+.nd{fill:var(--paper);stroke:var(--ink);stroke-width:1}
+.nd.lp{fill:var(--graphite)}
+.nd.gp{fill:url(#hatchDense)}
+.tx{font-family:var(--mono);font-size:11px;fill:var(--graphite);paint-order:stroke;stroke:var(--paper);stroke-width:4px;stroke-linejoin:round}
+.tx.ink{fill:var(--ink)}
+.tx.up{text-transform:uppercase;letter-spacing:.1em;font-size:10px}
+.tx.big{font-family:var(--serif);font-size:19px;fill:var(--ink)}
+.tx.amt{font-size:12px;fill:var(--ink);font-variant-numeric:tabular-nums}
+.bl{fill:var(--paper);stroke:var(--ink);stroke-width:1}
+.bn{font-family:var(--mono);font-size:9.5px;fill:var(--ink);text-anchor:middle;dominant-baseline:central}
+
+.seg,.stage,.stats,.chart,.tablebox{width:round(down, 100%, 24px)}
+
+/* ---------- ledger ---------- */
+.stats{display:grid;grid-template-columns:216px 216px minmax(0,1fr);margin:0 0 48px;outline:1px solid var(--rule);outline-offset:-0.5px;box-shadow:var(--line-box-gap)}
+.stat{padding:12px 12px 12px;min-width:0;display:grid;align-content:start}
+.stat + .stat{box-shadow:inset 0.5px 0 0 var(--rule)}
+.stat dt{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--graphite);line-height:24px}
+.stat dd{margin:0}
+.stat .v{font-size:32px;line-height:48px;font-variant-numeric:tabular-nums lining-nums}
+.stat .s{font-family:var(--mono);font-size:11px;line-height:24px;color:var(--graphite)}
+.tablebox{overflow-x:auto}
+table{width:100%;min-width:480px;border-collapse:collapse;font-variant-numeric:tabular-nums}
+caption{text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--graphite);line-height:24px;padding-bottom:12px}
+th,td{padding:0 0 0 12px;line-height:48px;text-align:right;box-shadow:inset 0 -0.5px 0 0 var(--rule)}
+th:first-child,td:first-child{text-align:left;padding-left:0}
+thead th{font-family:var(--mono);font-weight:400;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--graphite);line-height:24px;padding-bottom:12px;vertical-align:bottom}
+td{font-family:var(--mono);font-size:13px}
+td:first-child{font-family:var(--serif);font-size:18px}
+td .n{display:inline-grid;place-items:center;width:18px;height:18px;margin-right:12px;border:1px solid var(--ink);border-radius:50%;font-family:var(--mono);font-size:10px;line-height:1;vertical-align:2px}
+tfoot td{font-weight:500;box-shadow:none}
+tfoot td:first-child{font-weight:400;font-style:italic}
+td.zero{color:var(--graphite)}
+.note{margin:24px 0 0;line-height:24px;font-size:17px;color:var(--graphite);max-width:62ch}
+
+/* ---------- terms ---------- */
+.terms{margin:0;display:grid;gap:24px}
+.terms div{display:grid;gap:0}
+.terms dt{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;line-height:24px}
+.terms dd{margin:0;line-height:24px;max-width:62ch;text-wrap:pretty}
+.terms b{font-weight:500;font-variant-numeric:tabular-nums lining-nums}
+.quiet{color:var(--graphite)}
+
+.foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:0 24px;padding-block:24px;line-height:24px;box-shadow:var(--line-top);font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--graphite)}
+
+/* ---------- tabs ---------- */
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--paper)}
+.tabbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;margin-left:calc(-1 * var(--gutter));margin-right:calc(-1 * var(--gutter-r));padding-left:var(--gutter);padding-right:var(--gutter-r);background:var(--wash);box-shadow:0 0.5px 0 0 var(--rule), inset 0 0.5px 0 0 var(--rule);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.tabs{display:flex;gap:32px}
+.tabs [role="tab"]{height:48px;padding:0;background:none;border:0;color:var(--graphite);font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
+.tabs [role="tab"]:hover{color:var(--ink)}
+.tabs [role="tab"][aria-selected="true"]{color:var(--ink);box-shadow:inset 0 -2px 0 0 var(--ink)}
+.tabs [role="tab"]:focus-visible{outline-offset:-2px}
+.panel{scroll-margin-top:calc(48px + env(safe-area-inset-top, 0px))}
+.panel > :first-child{box-shadow:none}
+
+/* ---------- simulation ---------- */
+.sim{display:grid;gap:24px;padding-block:48px;box-shadow:var(--line-top)}
+.sim-intro{display:grid;grid-template-columns:168px minmax(0,672px);gap:0 48px}
+.sim-intro .body > p.lead{line-height:48px}
+.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px 48px;padding-top:24px}
+.board .group{align-content:start;gap:0}
+.board .ctl + .ctl{margin-top:24px}
+.board .group > .seg + .ctl{margin-top:24px}
+.readout{margin:12px 0 0;padding-top:12px;box-shadow:inset 0 0.5px 0 0 var(--rule);font-family:var(--mono);font-size:11px;line-height:24px;color:var(--graphite)}
+.readout b{font-weight:500;color:var(--ink)}
+.seg.v{grid-template-columns:1fr;height:auto}
+.seg.v button{height:48px}
+.seg.v button + button{box-shadow:inset 0 0.5px 0 0 var(--ink)}
+.board .more{margin-top:24px}
+.more{box-sizing:border-box;height:48px;width:144px;padding:0;background:none;border:0;outline:1px solid var(--ink);outline-offset:-0.5px;box-shadow:var(--line-box-gap);color:var(--ink);font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
+.more:hover{background:var(--ink);color:var(--paper)}
+.sstats{grid-template-columns:repeat(4,192px) minmax(0,1fr);margin:0}
+.sstats .v{font-size:30px}
+.takeaway{margin:0;font-style:italic;font-size:21px;line-height:24px;max-width:62ch;text-wrap:pretty}
+.chart{background:var(--paper);outline:1px solid var(--rule);outline-offset:-0.5px;box-shadow:var(--line-box-gap)}
+.chart canvas{display:block;width:100%;height:528px;cursor:crosshair;touch-action:pan-y}
+.kd{fill:var(--graphite);fill-opacity:.6}
+.kd2{fill:var(--ink)}
+.kl{stroke:var(--ink);stroke-width:1.5}
+.pick{display:grid;grid-template-columns:minmax(0,1fr) 312px;gap:24px 48px;align-items:start}
+.pick-main{min-width:0}
+.pick-title{margin:0;font-size:28px;line-height:48px;font-variant-numeric:lining-nums}
+.pick-sub{margin:0;font-family:var(--mono);font-size:12px;line-height:24px;color:var(--graphite)}
+.strip{position:relative;display:flex;align-items:flex-end;gap:2px;height:96px;margin-top:24px;box-shadow:inset 0 -1px 0 0 var(--ink)}
+.strip .bar{flex:1 1 0;min-width:2px;background:var(--ink);transition:height .35s ease}
+.strip .bar.lo{background:var(--graphite);opacity:.45}
+.strip .one{position:absolute;left:0;right:0;height:0;border-top:1px dashed var(--graphite);pointer-events:none}
+.strip .one i{position:absolute;right:0;top:-20px;font:normal 10px/16px var(--mono);color:var(--graphite);background:var(--paper);padding:0 4px}
+.pick-cap{margin:12px 0 12px;font-family:var(--mono);font-size:11px;line-height:24px;color:var(--graphite)}
+.pick-nums{margin:0;display:grid}
+.pick-nums div{display:flex;justify-content:space-between;align-items:center;gap:12px;height:48px;line-height:24px;box-shadow:inset 0 -0.5px 0 0 var(--rule)}
+.pick-nums dt{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--graphite)}
+.pick-nums dd{margin:0;font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums}
+.chips{display:grid;grid-template-columns:repeat(2,144px);gap:24px;margin-top:24px}
+.chips button{height:48px;padding:0 12px;background:none;border:0;outline:1px solid var(--rule);outline-offset:-0.5px;color:var(--ink);font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.chips button:hover{outline-color:var(--ink);background:var(--panel)}
+@media (max-width:960px){
+  .board{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .pick{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:760px){
+  .sim-intro{grid-template-columns:minmax(0,1fr)}
+  .sim-intro > .label{margin-bottom:24px}
+}
+@media (max-width:520px){
+  .board{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:960px){
+  .tool{grid-template-columns:minmax(0,1fr)}
+  .controls{grid-row:auto}
+  .deals{grid-column:auto}
+  .controls{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 48px}
+  .controls .group.wide{grid-column:1 / -1}
+}
+@media (max-width:760px){
+  .sec{grid-template-columns:minmax(0,1fr)}
+  .sec > .label{margin-bottom:24px}
+  .stats{grid-template-columns:minmax(0,1fr)}
+  .stat + .stat{box-shadow:inset 0 0.5px 0 0 var(--rule)}
+}
+@media (max-width:520px){
+  .controls{grid-template-columns:minmax(0,1fr)}
+}
+@media (prefers-reduced-motion: reduce){
+  .st{animation:none}
+}
+</style>
+
+</head>
+<body>
+<header class="topbar">
+  <a href="https://landonthornton.com/" class="home">Landon Thornton</a>
+  <span>Work · Private markets</span>
+</header>
+
+<main class="wrap">
+  <section class="sec first" aria-labelledby="ttl">
+    <p class="label">Interactive tool</p>
+    <div class="body">
+      <h1 id="ttl">Distribution waterfall</h1>
+      <p class="lead">Set the terms of a fund, then watch its proceeds work down the tiers to the investors and the manager.</p>
+      <p class="meta"><span>Private equity terms</span><span>Hand-drawn SVG Sankey</span><span>3,000-fund Monte Carlo</span><span>No libraries</span></p>
+    </div>
+  </section>
+
+  <div id="tabsTop"></div>
+  <nav class="tabbar" aria-label="Project views">
+    <div class="tabs" role="tablist" aria-label="Views">
+      <button type="button" role="tab" id="tab-wf" aria-controls="waterfall" aria-selected="true">Calculator</button>
+      <button type="button" role="tab" id="tab-sim" aria-controls="simulation" aria-selected="false" tabindex="-1">Monte Carlo</button>
+    </div>
+  </nav>
+
+  <div class="panel" id="waterfall" role="tabpanel" aria-labelledby="tab-wf">
+  <section class="tool" aria-label="Waterfall model">
+    <aside class="controls" aria-label="Fund terms and scenario">
+      <div class="group wide">
+        <p class="label">Structure</p>
+        <div class="seg" role="group" aria-label="Waterfall structure">
+          <button type="button" id="mEu" aria-pressed="true">European</button>
+          <button type="button" id="mAm" aria-pressed="false">American</button>
+        </div>
+        <p class="hint" id="modeHint">Whole fund. All deals pooled.</p>
+      </div>
+
+      <div class="ctl">
+        <div class="ctl-head"><label for="h">Hurdle rate</label><output id="hO" for="h">8.0%</output></div>
+        <input type="range" id="h" min="0" max="12" step="0.5" value="8">
+        <p class="hint">Preferred return, compounded yearly</p>
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="c">Catch-up</label><output id="cO" for="c">100%</output></div>
+        <input type="range" id="c" min="0" max="100" step="5" value="100">
+        <p class="hint" id="cHint">GP share until it holds 20%</p>
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="k">Carried interest</label><output id="kO" for="k">20%</output></div>
+        <input type="range" id="k" min="0" max="30" step="1" value="20">
+        <p class="hint">GP share of profit</p>
+      </div>
+
+      <div class="group wide">
+        <p class="label">Scenario</p>
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="m">Gross multiple</label><output id="mO" for="m">2.00×</output></div>
+        <input type="range" id="m" min="0.5" max="3" step="0.05" value="2">
+        <p class="hint">Exit value ÷ fund size</p>
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="t">Hold period</label><output id="tO" for="t">5 yrs</output></div>
+        <input type="range" id="t" min="1" max="10" step="1" value="5">
+        <p class="hint">Years from close to exit</p>
+      </div>
+      <div class="group wide">
+        <button type="button" class="reset" id="reset">Reset to 8% / 100% / 20%</button>
+      </div>
+    </aside>
+
+    <figure class="fig">
+      <div class="stage" id="stage">
+        <svg id="sk" role="img" aria-labelledby="figcap" width="744" height="600">
+          <defs>
+            <pattern id="hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+              <rect class="hb" width="6" height="6"></rect>
+              <line class="hl" x1="0" y1="0" x2="0" y2="6"></line>
+            </pattern>
+            <pattern id="hatchDense" patternUnits="userSpaceOnUse" width="3.5" height="3.5" patternTransform="rotate(45)">
+              <rect class="hb" width="3.5" height="3.5"></rect>
+              <line class="hl" x1="0" y1="0" x2="0" y2="3.5"></line>
+            </pattern>
+          </defs>
+        </svg>
+      </div>
+      <figcaption>
+        <span id="figcap">Fig. 1 · $200.0M of proceeds from five $20M deals</span>
+        <span class="key" aria-hidden="true">
+          <span><svg width="22" height="12"><rect width="22" height="12" class="lk up"></rect></svg>Before the split</span>
+          <span><svg width="22" height="12"><rect width="22" height="12" class="lk lp"></rect></svg>To LPs</span>
+          <span><svg width="22" height="12"><rect width="22" height="12" class="lk gp"></rect></svg>To the GP</span>
+        </span>
+      </figcaption>
+    </figure>
+
+    <div class="deals">
+      <div class="tablebox">
+        <table>
+          <caption>Table 1 · The deals. Rename a deal, type its cost or exit value, add or remove deals, or change the fund size to scale every deal.</caption>
+          <thead><tr><th scope="col">Deal</th><th scope="col">Cost</th><th scope="col">Exit value</th><th scope="col">Multiple</th><th scope="col" class="rm"><span class="vh">Remove</span></th></tr></thead>
+          <tbody id="db"></tbody>
+          <tfoot><tr><td>Fund size</td><td><span class="money">$<input id="fund" type="text" inputmode="decimal" autocomplete="off" aria-label="Fund size, $ millions">M</span></td><td id="ftot"></td><td id="fmul"></td><td class="rm"></td></tr></tfoot>
+        </table>
+      </div>
+      <div class="deal-actions">
+        <button type="button" class="more" id="addDeal">Add deal</button>
+        <span class="add-hint" id="addHint"></span>
+        <button type="button" class="reset" id="resetDeals">Reset to five $20M deals</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="l-ledger">
+    <h2 class="label" id="l-ledger">Ledger</h2>
+    <div class="body">
+      <dl class="stats" id="stats"></dl>
+      <div class="tablebox">
+        <table>
+          <caption id="tcap">Table 2 · Distributions by tier, European waterfall</caption>
+          <thead><tr><th scope="col">Tier</th><th scope="col">Limited partners</th><th scope="col">General partner</th><th scope="col">Total</th></tr></thead>
+          <tbody id="tb"></tbody>
+          <tfoot id="tf"></tfoot>
+        </table>
+      </div>
+      <p class="note" id="note"></p>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="l-terms">
+    <h2 class="label" id="l-terms">The terms</h2>
+    <div class="body">
+      <dl class="terms" id="terms"></dl>
+    </div>
+  </section>
+
+
+  <section class="sec" aria-labelledby="l-model-calc">
+    <h2 class="label" id="l-model-calc">The model</h2>
+    <div class="body">
+      <p>The model starts as a $100M fund with five $20M deals, all drawn at close and returned at one exit after the hold period. The deals range from a full write-off to a 5× winner. Rename a deal, type its cost or exit value, add or remove deals (up to ten), or change the fund size to scale every deal at once. The gross multiple slider rescales all exit values together and keeps their proportions.</p>
+      <p>In European mode the exits are pooled and run through one waterfall on the whole fund. In American mode each deal runs its own waterfall on its own cost, and the results are added up. The model leaves out management fees, the GP's own commitment and the timing of individual exits, so the GP's share here is carry alone.</p>
+      <p class="quiet">The Sankey is drawn by hand in SVG. Every frame it recomputes the layout from values that ease toward their targets, so ribbons grow, shrink and reroute between structures instead of jumping. The moving dots run along each ribbon at a fixed speed; wider ribbons carry more lanes.</p>
+    </div>
+  </section>
+  </div>
+
+  <div class="panel" id="simulation" role="tabpanel" aria-labelledby="tab-sim" hidden>
+  <section class="sim" aria-labelledby="l-sim">
+    <div class="sim-intro">
+      <h2 class="label" id="l-sim">Simulation</h2>
+      <div class="body">
+        <p class="lead">One fund is one roll of the dice. Here are 3,000.</p>
+        <p>Pick an asset class and turn the dials. Every dot is a simulated $100M fund run through the same waterfall as the calculator, and the two tabs share their terms. Changing a term reruns the same funds, so what moves is the effect of that term alone. New draw rolls a fresh set.</p>
+      </div>
+    </div>
+
+    <div class="board">
+      <div class="group">
+        <p class="label">Asset class</p>
+        <div class="seg v" role="group" aria-label="Asset class">
+          <button type="button" data-cls="buyout" aria-pressed="true">Buyout</button>
+          <button type="button" data-cls="growth" aria-pressed="false">Growth equity</button>
+          <button type="button" data-cls="venture" aria-pressed="false">Venture</button>
+        </div>
+        <p class="hint" id="pBlurb"></p>
+        <button type="button" class="more" id="newDraw">New draw</button>
+        <button type="button" class="reset" id="resetWorld">Reset buyout defaults</button>
+      </div>
+      <div class="group">
+        <p class="label">Terms</p>
+        <div class="seg" role="group" aria-label="Waterfall structure">
+          <button type="button" id="sEu" aria-pressed="true">European</button>
+          <button type="button" id="sAm" aria-pressed="false">American</button>
+        </div>
+          <div class="ctl">
+            <div class="ctl-head"><label for="sh">Hurdle rate</label><output id="shO" for="sh"></output></div>
+            <input type="range" id="sh" min="0" max="12" step="0.5" value="8">
+            <p class="hint">Preferred return, compounded yearly</p>
+          </div>
+          <div class="ctl">
+            <div class="ctl-head"><label for="sc">Catch-up</label><output id="scO" for="sc"></output></div>
+            <input type="range" id="sc" min="0" max="100" step="5" value="100">
+            <p class="hint" id="scH"></p>
+          </div>
+          <div class="ctl">
+            <div class="ctl-head"><label for="sK">Carried interest</label><output id="skO" for="sK"></output></div>
+            <input type="range" id="sK" min="0" max="30" step="1" value="20">
+            <p class="hint">GP share of profit</p>
+          </div>
+      </div>
+      <div class="group">
+        <p class="label">Deals</p>
+          <div class="ctl">
+            <div class="ctl-head"><label for="wMed">Typical deal</label><output id="wMedO" for="wMed"></output></div>
+            <input type="range" id="wMed" min="0.8" max="3" step="0.05" value="1.85">
+            <p class="hint">Median multiple of a deal that isn't written off</p>
+          </div>
+          <div class="ctl">
+            <div class="ctl-head"><label for="wSig">Spread</label><output id="wSigO" for="wSig"></output></div>
+            <input type="range" id="wSig" min="0.2" max="2" step="0.05" value="0.5">
+            <p class="hint" id="wSigH"></p>
+          </div>
+          <div class="ctl">
+            <div class="ctl-head"><label for="wWo">Write-offs</label><output id="wWoO" for="wWo"></output></div>
+            <input type="range" id="wWo" min="0" max="60" step="1" value="8">
+            <p class="hint" id="wWoH"></p>
+          </div>
+          <div class="ctl">
+            <div class="ctl-head"><label for="wRec">Max recovery</label><output id="wRecO" for="wRec"></output></div>
+            <input type="range" id="wRec" min="0" max="0.6" step="0.05" value="0.3">
+            <p class="hint">The most a written-off deal can return</p>
+          </div>
+          <p class="readout" id="wLoss" aria-live="polite"></p>
+      </div>
+      <div class="group">
+        <p class="label">Fund</p>
+          <div class="ctl">
+            <div class="ctl-head"><label for="wN">Deals per fund</label><output id="wNO" for="wN"></output></div>
+            <input type="range" id="wN" min="3" max="40" step="1" value="12">
+            <p class="hint">Equal-sized, on $100M</p>
+          </div>
+          <div class="ctl">
+            <div class="ctl-head"><label for="wRho">Deals move together</label><output id="wRhoO" for="wRho"></output></div>
+            <input type="range" id="wRho" min="0" max="80" step="5" value="25">
+            <p class="hint">Shared market conditions within one fund</p>
+          </div>
+          <div class="ctl">
+            <div class="ctl-head"><label for="sT">Hold period</label><output id="sTO" for="sT"></output></div>
+            <input type="range" id="sT" min="1" max="10" step="1" value="5">
+            <p class="hint">Years the hurdle compounds</p>
+          </div>
+      </div>
+    </div>
+
+    <dl class="stats sstats" id="sstats"></dl>
+    <p class="takeaway" id="stake"></p>
+
+    <figure class="fig">
+      <div class="chart"><canvas id="simc" role="img" aria-label="Scatter of simulated funds"></canvas></div>
+      <figcaption>
+        <span id="simcap">Fig. 2 · 3,000 simulated $100M buyout funds. Hover or tap a dot to see its deals.</span>
+        <span class="key" aria-hidden="true">
+          <span><svg width="14" height="12"><circle cx="7" cy="6" r="3" class="kd"></circle></svg>A fund</span>
+          <span><svg width="14" height="12"><circle cx="7" cy="6" r="3" class="kd2"></circle></svg>Paid more than European</span>
+          <span><svg width="22" height="12"><line x1="0" y1="6" x2="22" y2="6" class="kl"></line></svg>European carry at each multiple</span>
+        </span>
+      </figcaption>
+    </figure>
+
+    <div class="pick">
+      <div class="pick-main">
+        <p class="label" id="pkL">Selected fund</p>
+        <p class="pick-title" id="pkT"></p>
+        <p class="pick-sub" id="pkS"></p>
+        <div class="strip" id="pkStrip" aria-hidden="true"></div>
+        <p class="pick-cap">Its deals, best to worst, on a log scale. Dark bars returned at least their cost.</p>
+      </div>
+      <div class="pick-side">
+        <dl class="pick-nums" id="pkN"></dl>
+        <div class="chips" role="group" aria-label="Jump to a fund">
+          <button type="button" data-pick="median">Median</button>
+          <button type="button" data-pick="best">Best</button>
+          <button type="button" data-pick="worst">Worst</button>
+          <button type="button" data-pick="claw">Biggest clawback</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <section class="sec" aria-labelledby="l-model-sim">
+    <h2 class="label" id="l-model-sim">The model</h2>
+    <div class="body">
+      <p>Each simulated fund is $100M split evenly across its deals. A deal is either written off, recovering anywhere from nothing up to the recovery ceiling (0.3× by default), or returns a multiple drawn from a lognormal distribution around the typical deal, with the spread dial setting how far results stray from it. The low end of that distribution falls below 1×, so funds also hold partial losses: companies that survive but sell for less than they cost. Write-offs are modeled on their own because real deal results pile up near zero in a way one smooth curve can't produce. A shared shock for each fund makes its deals rise and fall together, and in a bad fund the same shock makes write-offs more likely.</p>
+      <p>Every fund runs through the same waterfall as the calculator, once pooled for European terms and once deal by deal for American, so each dot carries both results and the two tabs share their terms. The presets are calibrated to plausible gross outcomes for each asset class, not fitted to a dataset. The model leaves out management fees, the GP's own commitment and exit timing: every deal is held for the full hold period, so the hurdle compounds over the same years for every deal.</p>
+      <p class="quiet">It all runs in your browser in plain JavaScript, with no server and no libraries. The random draws are made once per set from a seeded generator, and every dial reshapes those same draws, so rerunning all 3,000 funds takes a few milliseconds and the dots glide instead of reshuffling. New draw makes a fresh set.</p>
+    </div>
+  </section>
+  </div>
+
+
+  <footer class="foot">
+    <span>Landon Thornton · Distribution waterfall · <a href="https://github.com/LandoCole/distribution-waterfall">Source</a></span>
+    <span>Illustrative model, not investment advice</span>
+  </footer>
+</main>
+
+<script type="module">
+import { distribute, totals, gpCarry } from './src/waterfall.js';
+import { PRESETS, makeDraws, makeResults, simulate } from './src/simulation.js';
+
+(function(){
+  const NS = 'http://www.w3.org/2000/svg';
+  let N = 5;
+  const MAXDEALS = 10, SHAPE = [0, .6, 1.2, 2.2, 4], MEAN = 1.6;
+  let C = 100, scaleT = 1.2, scaleD = 1.2;   // fund size; px per $M, target and displayed
+  let H = 600;
+  const NW = 10, DGAP = 32, TL = 40, TG = 16, RG = 64;
+  const TIERS = ['Return of capital', 'Preferred return', 'GP catch-up', 'Carried interest split'];
+  const letters = n => Array.from({ length: n }, (_, i) => String.fromCharCode(65 + i));
+  let DEALS = letters(N);
+  const DEF = { mode: 'eu', h: 8, c: 100, k: 20, M: 2, T: 5 };
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  const DEF_COST = [20, 20, 20, 20, 20];
+  const DEF_EXIT = SHAPE.map(m => 20 * m * DEF.M / MEAN);
+  const st = Object.assign({}, DEF, { cost: DEF_COST.slice(), exit: DEF_EXIT.slice(), names: DEF_COST.map(() => '') });
+  // a deal's display name: what the user typed, or the default letter
+  const dn = i => (st.names[i] || '').trim() || 'Deal ' + DEALS[i];
+  const clip = (t, n) => t.length > n ? t.slice(0, n - 1) + '…' : t;
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- the waterfall (src/waterfall.js) ---------- */
+  // h, c, k are fractions; T is years
+  const wf = (D, cap, h, T, c, k) => distribute(D, cap, { hurdle: h, years: T, catchUp: c, carry: k });
+  const gpOnly = (D, cap, h, T, c, k) => gpCarry(D, cap, { hurdle: h, years: T, catchUp: c, carry: k });
+  const add = totals;
+
+  function compute(s) {
+    const h = s.h / 100, c = s.c / 100, k = s.k / 100;
+    C = sum(s.cost);
+    const D = s.exit.slice();
+    const total = sum(D);
+    const eu = wf(total, C, h, s.T, c, k);
+    const per = D.map((d, i) => wf(d, s.cost[i], h, s.T, c, k));
+    const am = [0, 1, 2, 3].map(j => add(per.map(t => t[j])));
+    const tiers = s.mode === 'eu' ? eu : am;
+    const L = {};
+    D.forEach((d, i) => {
+      L[`d${i}>pool`] = s.mode === 'eu' ? d : 0;
+      for (let j = 0; j < 4; j++) L[`d${i}>t${j}`] = s.mode === 'am' ? per[i][j].lp + per[i][j].gp : 0;
+    });
+    for (let j = 0; j < 4; j++) {
+      L[`pool>t${j}`] = s.mode === 'eu' ? eu[j].lp + eu[j].gp : 0;
+      L[`t${j}>lp`] = tiers[j].lp;
+      L[`t${j}>gp`] = tiers[j].gp;
+    }
+    const pref = C * (Math.pow(1 + h, s.T) - 1);
+    const cuNeed = c > k ? k * pref / (c - k) : null;
+    return { D, total, tiers, L, eu: add(eu), am: add(am), pref, cuNeed, h, c, k };
+  }
+
+  /* ---------- graph ---------- */
+  // nodes and links are rebuilt whenever deals are added or removed
+  let nodes = [], LINKS = [], outL = {}, inL = {};
+  const rank = n => n === 'pool' ? -1 : n === 'lp' ? 0 : n === 'gp' ? 1 : +n.slice(1);
+  function buildLinks() {
+    nodes = [...Array.from({ length: N }, (_, i) => 'd' + i), 'pool', 't0', 't1', 't2', 't3', 'lp', 'gp'];
+    LINKS = [];
+    for (let i = 0; i < N; i++) {
+      LINKS.push({ key: `d${i}>pool`, from: 'd' + i, to: 'pool', kind: 'up' });
+      for (let j = 0; j < 4; j++) LINKS.push({ key: `d${i}>t${j}`, from: 'd' + i, to: 't' + j, kind: 'up' });
+    }
+    for (let j = 0; j < 4; j++) {
+      LINKS.push({ key: `pool>t${j}`, from: 'pool', to: 't' + j, kind: 'up' });
+      LINKS.push({ key: `t${j}>lp`, from: 't' + j, to: 'lp', kind: 'lp' });
+      LINKS.push({ key: `t${j}>gp`, from: 't' + j, to: 'gp', kind: 'gp' });
+    }
+    outL = {}; inL = {};
+    nodes.forEach(n => {
+      outL[n] = LINKS.filter(l => l.from === n).sort((a, b) => rank(a.to) - rank(b.to));
+      inL[n] = LINKS.filter(l => l.to === n).sort((a, b) => rank(a.from) - rank(b.from));
+    });
+  }
+  function mk(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    for (const a in attrs) e.setAttribute(a, attrs[a]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  const svg = document.getElementById('sk');
+  const stage = document.getElementById('stage');
+  const gL = mk('g', {}, svg), gS = mk('g', { 'aria-hidden': 'true' }, svg), gN = mk('g', {}, svg), gT = mk('g', {}, svg);
+  const txt = (cls, anchor) => mk('text', { class: 'tx ' + cls, 'text-anchor': anchor || 'start' }, gT);
+  let linkEls = {}, nodeEls = {}, dealLb = [];
+  function buildSvg() {
+    gL.textContent = ''; gS.textContent = ''; gN.textContent = '';
+    dealLb.forEach(d => { d.a.remove(); d.b.remove(); });
+    linkEls = {};
+    LINKS.forEach(l => {
+      linkEls[l.key] = {
+        p: mk('path', { class: 'lk ' + l.kind }, gL),
+        lanes: [0, 1, 2, 3].map(() => mk('path', { class: 'st ' + l.kind }, gS))
+      };
+    });
+    nodeEls = {};
+    nodes.forEach(n => { nodeEls[n] = mk('rect', { class: 'nd' + (n === 'lp' ? ' lp' : n === 'gp' ? ' gp' : ''), width: NW }, gN); });
+    dealLb = DEALS.map(() => ({ a: txt('ink', 'end'), b: txt('', 'end') }));
+  }
+  buildLinks();
+  buildSvg();
+  const poolLb = { a: txt('up', 'middle'), b: txt('amt', 'middle') };
+  poolLb.a.textContent = 'Pooled fund';
+  const tierLb = TIERS.map((name, j) => {
+    const g = mk('g', {}, gT);
+    const c = mk('circle', { class: 'bl', r: 7.5 }, g);
+    const n = mk('text', { class: 'bn' }, g); n.textContent = j + 1;
+    const a = mk('text', { class: 'tx up ink' }, g); a.textContent = name;
+    const b = mk('text', { class: 'tx amt' }, g);
+    return { c, n, a, b };
+  });
+  const recLb = {
+    lp: { a: txt('big'), b: txt('amt'), c: txt('') },
+    gp: { a: txt('big'), b: txt('amt'), c: txt('') }
+  };
+  recLb.lp.a.textContent = 'Limited partners';
+  recLb.gp.a.textContent = 'General partner';
+
+  const f = v => Math.round(v * 100) / 100;
+  const $m = v => '$' + (Math.abs(v) < 0.05 ? 0 : v).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'M';
+  const set = (el, attrs) => { for (const a in attrs) el.setAttribute(a, attrs[a]); };
+
+  function draw(V) {
+    const W = Math.max(640, stage.clientWidth | 0);
+    H = Math.max(600, Math.ceil((64 + 360 + (N - 1) * DGAP) / 24) * 24);
+    set(svg, { viewBox: `0 0 ${W} ${H}`, width: W, height: H });
+    const val = {};
+    nodes.forEach(n => {
+      let a = 0, b = 0;
+      inL[n].forEach(l => a += V[l.key]);
+      outL[n].forEach(l => b += V[l.key]);
+      val[n] = Math.max(a, b);
+    });
+    const xd = 132, xt = Math.round(W * .52), xr = W - 150, xp = Math.round(xd + (xt - xd) * .46);
+    const X = {}, Y = {}, Hh = {};
+    let colH = (N - 1) * DGAP, y;
+    for (let i = 0; i < N; i++) colH += val['d' + i] * scaleD;
+    y = (H - colH) / 2;
+    for (let i = 0; i < N; i++) { const n = 'd' + i; X[n] = xd; Y[n] = y; Hh[n] = val[n] * scaleD; y += Hh[n] + DGAP; }
+    X.pool = xp; Hh.pool = val.pool * scaleD; Y.pool = (H - Hh.pool) / 2;
+    colH = 4 * TL + 3 * TG;
+    for (let j = 0; j < 4; j++) colH += val['t' + j] * scaleD;
+    y = (H - colH) / 2;
+    for (let j = 0; j < 4; j++) { const n = 't' + j; y += TL; X[n] = xt; Y[n] = y; Hh[n] = val[n] * scaleD; y += Hh[n] + TG; }
+    colH = RG + (val.lp + val.gp) * scaleD;
+    y = (H - colH) / 2;
+    X.lp = xr; Y.lp = y; Hh.lp = val.lp * scaleD; y += Hh.lp + RG;
+    X.gp = xr; Y.gp = y; Hh.gp = val.gp * scaleD;
+
+    const oc = {}, ic = {}, pos = {};
+    nodes.forEach(n => { oc[n] = Y[n]; ic[n] = Y[n]; });
+    nodes.forEach(n => outL[n].forEach(l => { const w = V[l.key] * scaleD; pos[l.key] = { y0: oc[n], w }; oc[n] += w; }));
+    nodes.forEach(n => inL[n].forEach(l => { pos[l.key].y1 = ic[n]; ic[n] += V[l.key] * scaleD; }));
+
+    LINKS.forEach(l => {
+      const { y0, y1, w } = pos[l.key], e = linkEls[l.key];
+      if (w < 0.05) { e.p.setAttribute('d', ''); e.lanes.forEach(s => s.setAttribute('d', '')); return; }
+      const ax = X[l.from] + NW, bx = X[l.to], mx = f((ax + bx) / 2);
+      e.p.setAttribute('d', `M${ax},${f(y0)}C${mx},${f(y0)} ${mx},${f(y1)} ${bx},${f(y1)}L${bx},${f(y1 + w)}C${mx},${f(y1 + w)} ${mx},${f(y0 + w)} ${ax},${f(y0 + w)}Z`);
+      const lanes = w < 4 ? 0 : Math.min(4, 1 + Math.floor(w / 24));
+      e.lanes.forEach((s, i) => {
+        if (i >= lanes) { s.setAttribute('d', ''); return; }
+        const o = (i + .5) / lanes * w;
+        s.setAttribute('d', `M${ax},${f(y0 + o)}C${mx},${f(y0 + o)} ${mx},${f(y1 + o)} ${bx},${f(y1 + o)}`);
+      });
+    });
+
+    nodes.forEach(n => {
+      set(nodeEls[n], { x: X[n], y: f(Y[n]), height: f(Math.max(Hh[n], 1)) });
+    });
+    const poolOp = Math.min(1, val.pool / 10);
+    nodeEls.pool.style.opacity = poolOp;
+
+    // labels
+    let total = 0; for (let i = 0; i < N; i++) total += val['d' + i];
+    for (let i = 0; i < N; i++) {
+      const n = 'd' + i, cy = Y[n] + Hh[n] / 2;
+      dealLb[i].a.textContent = clip(dn(i), 17);
+      dealLb[i].b.textContent = `${(st.cost[i] > 0 ? val[n] / st.cost[i] : 0).toFixed(2)}× · ${$m(val[n])}`;
+      set(dealLb[i].a, { x: xd - 10, y: f(cy - 2) });
+      set(dealLb[i].b, { x: xd - 10, y: f(cy + 12) });
+    }
+    set(poolLb.a, { x: xp + NW / 2, y: f(Y.pool - 22) });
+    set(poolLb.b, { x: xp + NW / 2, y: f(Y.pool - 8) });
+    poolLb.b.textContent = $m(val.pool);
+    poolLb.a.style.opacity = poolLb.b.style.opacity = poolOp;
+    for (let j = 0; j < 4; j++) {
+      const n = 't' + j, L = tierLb[j];
+      set(L.c, { cx: xt + 7.5, cy: f(Y[n] - 25) });
+      set(L.n, { x: xt + 7.5, y: f(Y[n] - 25) });
+      set(L.a, { x: xt + 22, y: f(Y[n] - 21.5) });
+      set(L.b, { x: xt + 22, y: f(Y[n] - 6) });
+      L.b.textContent = $m(val[n]);
+    }
+    ['lp', 'gp'].forEach(n => {
+      set(recLb[n].a, { x: xr + NW + 12, y: f(Y[n] + 15) });
+      set(recLb[n].b, { x: xr + NW + 12, y: f(Y[n] + 33) });
+      set(recLb[n].c, { x: xr + NW + 12, y: f(Y[n] + 48) });
+      recLb[n].b.textContent = $m(val[n]);
+    });
+    const profit = total - C;
+    recLb.lp.c.textContent = `${(val.lp / C).toFixed(2)}× net`;
+    recLb.gp.c.textContent = profit > 0.05 ? `${(val.gp / profit * 100).toFixed(1)}% of profit` : 'No profit';
+  }
+
+  /* ---------- tweening ---------- */
+  let target = {}, disp = {}, raf = 0, last = 0;
+  function tick(now) {
+    const dt = last ? Math.min(64, now - last) : 16; last = now;
+    const a = 1 - Math.exp(-dt / 110);
+    let moving = false;
+    for (const key in target) {
+      const d = target[key] - disp[key];
+      if (Math.abs(d) > 0.02) { disp[key] += d * a; moving = true; } else disp[key] = target[key];
+    }
+    if (Math.abs(scaleT - scaleD) > scaleT * 0.002) { scaleD += (scaleT - scaleD) * a; moving = true; } else scaleD = scaleT;
+    draw(disp);
+    raf = moving ? requestAnimationFrame(tick) : 0;
+    if (!moving) last = 0;
+  }
+  function kick() {
+    if (reduce) { disp = Object.assign({}, target); scaleD = scaleT; draw(disp); return; }
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+
+  /* ---------- text ---------- */
+  const el = id => document.getElementById(id);
+  const pct = (v, d) => (v * 100).toFixed(d === undefined ? 1 : d) + '%';
+  function cell(v) { return `<td${Math.abs(v) < 0.05 ? ' class="zero"' : ''}>${$m(v)}</td>`; }
+
+  function writeText(R) {
+    const s = st, total = R.total, profit = total - C;
+    const cur = s.mode === 'eu' ? R.eu : R.am, other = s.mode === 'eu' ? R.am : R.eu;
+    const lpIrr = cur.lp > 0 ? Math.pow(cur.lp / C, 1 / s.T) - 1 : -1;
+
+    el('hO').textContent = s.h.toFixed(1) + '%';
+    el('cO').textContent = s.c === 0 ? 'None' : s.c + '%';
+    el('kO').textContent = s.k + '%';
+    el('mO').textContent = s.M.toFixed(2) + '×';
+    el('tO').textContent = s.T + (s.T === 1 ? ' yr' : ' yrs');
+    el('cHint').textContent = s.c === 0 ? 'Straight to the carry split'
+      : s.c <= s.k ? 'At or below carry, so it never catches up'
+      : `GP share until it holds ${s.k}% of profit`;
+    el('modeHint').textContent = s.mode === 'eu' ? 'Whole fund. All deals pooled.' : 'Deal by deal. Each exit stands alone.';
+    el('mEu').setAttribute('aria-pressed', s.mode === 'eu');
+    el('mAm').setAttribute('aria-pressed', s.mode === 'am');
+
+    el('figcap').textContent = `Fig. 1 · ${$m(total)} of proceeds from ${N} ${N === 1 ? 'deal' : 'deals'} costing ${$m(C)}, ${s.M.toFixed(2)}× gross over ${s.T} ${s.T === 1 ? 'year' : 'years'}, ${s.mode === 'eu' ? 'one pooled waterfall' : 'one waterfall per deal'}`;
+    el('tcap').textContent = `Table 2 · Distributions by tier, ${s.mode === 'eu' ? 'European (whole-fund)' : 'American (deal-by-deal)'} waterfall`;
+
+    const diff = R.am.gp - R.eu.gp;
+    const share = profit > 0.05 ? pct(cur.gp / profit) + ' of profit' : 'No profit to share';
+    const third = s.mode === 'eu'
+      ? `<div class="stat"><dt>Same deals, American</dt><dd class="v">${$m(R.am.gp)}</dd><dd class="s">${diff > 0.05 ? 'GP gets ' + $m(diff) + ' more' : diff < -0.05 ? 'GP gets ' + $m(-diff) + ' less' : 'No difference here'}</dd></div>`
+      : `<div class="stat"><dt>Clawback exposure</dt><dd class="v">${$m(Math.max(0, diff))}</dd><dd class="s">GP gets ${$m(R.eu.gp)} whole-fund</dd></div>`;
+    el('stats').innerHTML =
+      `<div class="stat"><dt>Limited partners</dt><dd class="v">${$m(cur.lp)}</dd><dd class="s">${(cur.lp / C).toFixed(2)}× net · ${lpIrr <= -1 ? '−100%' : pct(lpIrr)} IRR</dd></div>` +
+      `<div class="stat"><dt>General partner</dt><dd class="v">${$m(cur.gp)}</dd><dd class="s">${share}</dd></div>` + third;
+
+    el('tb').innerHTML = R.tiers.map((t, j) =>
+      `<tr><td><span class="n">${j + 1}</span>${TIERS[j]}</td>${cell(t.lp)}${cell(t.gp)}${cell(t.lp + t.gp)}</tr>`).join('');
+    el('tf').innerHTML = `<tr><td>Total</td>${cell(cur.lp)}${cell(cur.gp)}${cell(total)}</tr>`;
+
+    const losers = DEALS.map((d, i) => i).filter(i => st.exit[i] < st.cost[i] - 0.05).map(dn);
+    const list = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+    const lossOn = losers.length === 0 ? 'weaker deals' : losers.length === 1 ? `the loss on ${losers[0]}` : `losses on ${list(losers)}`;
+    let note;
+    if (profit <= 0.05) note = `The fund returns less than the ${$m(C)} it invested, so no tier past return of capital is reached${s.mode === 'am' && R.am.gp > 0.05 ? '. Deal by deal, though, the winners still pay the GP ' + $m(R.am.gp) + ' of carry' : ''}.`;
+    else if (s.mode === 'am') note = diff > 0.05
+      ? `Deal by deal, ${lossOn} never ${losers.length === 1 ? 'offsets' : 'offset'} the winners, so the GP collects ${$m(diff)} more than a whole-fund waterfall would pay. A clawback provision would make the GP return that amount when the fund winds down.`
+      : diff < -0.05
+      ? `Deal by deal pays the GP ${$m(-diff)} less here, because some deals never clear their own hurdle and catch-up. There is nothing to claw back.`
+      : `Here the deal-by-deal result matches the whole-fund result, so there is nothing to claw back.`;
+    else note = diff > 0.05
+      ? `Pooling lets ${lossOn} reduce the profit the GP shares in. Run deal by deal, the same exits would pay the GP ${$m(R.am.gp)}.`
+      : diff < -0.05
+      ? `Pooling helps the GP here. Run deal by deal, the same exits would pay it only ${$m(R.am.gp)}, because some deals never clear their own hurdle.`
+      : `With these terms the structure makes no difference to the GP's total.`;
+    el('note').textContent = note;
+
+    // terms
+    const hurdle = s.h === 0
+      ? `With no hurdle, carry can start as soon as the LPs have their capital back.`
+      : `LPs must earn <b>${s.h.toFixed(1)}%</b> a year on their capital, compounded, before the GP earns any carry. Over ${s.T} ${s.T === 1 ? 'year' : 'years'} that is <b>${$m(R.pref)}</b> on a <b>${$m(C)}</b> fund.`;
+    let catchup;
+    const split = `${100 - s.k}/${s.k}`;
+    if (s.c === 0) catchup = `No catch-up. Past the hurdle, profit splits ${split} straight away, so the GP never earns carry on the preferred return itself. Its share of total profit ends up below ${s.k}%.`;
+    else if (s.c <= s.k) catchup = `A catch-up at <b>${s.c}%</b> is no richer than the ${s.k}% carry, so the GP never catches up. Every dollar past the hurdle splits ${100 - s.c}/${s.c} and the carry tier is never reached.`;
+    else if (s.h === 0) catchup = `With no preferred return there is nothing to catch up on, so profit goes straight to the ${split} split.`;
+    else catchup = `Once the hurdle is met, the GP takes <b>${s.c}%</b> of the next dollars until it holds ${s.k}% of all profit paid so far. On these terms that tier needs <b>${$m(R.cuNeed)}</b> of proceeds.${s.c < 100 ? ` The LPs get the other ${100 - s.c}% while it fills.` : ''}`;
+    const carry = s.k === 0
+      ? `No carried interest. Every dollar of profit goes to the LPs.`
+      : `After the catch-up, each further dollar splits <b>${split}</b> between LPs and the GP. ${profit > 0.05 ? `Across this result the GP takes <b>${pct(cur.gp / profit)}</b> of the ${$m(profit)} profit.` : `This result has no profit to split.`}`;
+    const structure = s.mode === 'eu'
+      ? `<b>European</b>, or whole-fund: every deal's proceeds go into one pool, and LPs get all their capital plus the hurdle back before any carry. Losses on one deal reduce the carry earned on the others. Switch to American to compare.`
+      : `<b>American</b>, or deal-by-deal: each exit runs its own waterfall on its own capital. Winners pay carry as they exit, and losers don't offset them, so the GP can collect carry the fund as a whole didn't earn. Funds limit this with a clawback.`;
+    el('terms').innerHTML =
+      `<div><dt>Hurdle rate</dt><dd>${hurdle}</dd></div>` +
+      `<div><dt>Catch-up</dt><dd>${catchup}</dd></div>` +
+      `<div><dt>Carried interest</dt><dd>${carry}</dd></div>` +
+      `<div><dt>European vs. American</dt><dd>${structure}</dd></div>`;
+  }
+
+  function update(first) {
+    const R = compute(st);
+    target = Object.assign({}, R.L);
+    scaleT = 360 / Math.max(R.total, 3 * C, 1e-6);
+    if (first) { disp = Object.assign({}, target); scaleD = scaleT; }
+    for (const key in target) if (!(key in disp)) disp[key] = 0;   // a new deal grows in from zero
+    writeText(R);
+    syncDeals();
+    syncTermInputs();
+    if (simReady) simOnChange();
+    if (first) draw(disp); else kick();
+  }
+
+  /* ---------- inputs ---------- */
+  const bind = (id, key) => {
+    const inp = el(id);
+    inp.addEventListener('input', () => { st[key] = +inp.value; update(); });
+  };
+  bind('h', 'h'); bind('c', 'c'); bind('k', 'k'); bind('t', 'T');
+  el('mEu').addEventListener('click', () => { st.mode = 'eu'; update(); });
+  el('mAm').addEventListener('click', () => { st.mode = 'am'; update(); });
+  el('reset').addEventListener('click', () => {
+    Object.assign(st, { h: DEF.h, c: DEF.c, k: DEF.k });
+    el('h').value = DEF.h; el('c').value = DEF.c; el('k').value = DEF.k;
+    update();
+  });
+  // pick up values the browser restored
+  st.h = +el('h').value; st.c = +el('c').value; st.k = +el('k').value; st.T = +el('t').value;
+
+  /* ---------- deals table ---------- */
+  const fmtIn = v => (Math.round(v * 10) / 10).toFixed(1);
+  const parse = v => { const n = parseFloat(String(v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : NaN; };
+  function syncDeals() {
+    const act = document.activeElement;
+    const put = (id, v) => { const e = el(id); if (e !== act) { e.value = fmtIn(v); e.removeAttribute('aria-invalid'); } };
+    for (let i = 0; i < N; i++) {
+      put('cost' + i, st.cost[i]); put('exit' + i, st.exit[i]);
+      const m = el('mul' + i);
+      m.textContent = (st.exit[i] / st.cost[i]).toFixed(2) + '×';
+      m.className = st.exit[i] < st.cost[i] - 0.05 ? 'loss' : '';
+    }
+    put('fund', C);
+    el('ftot').textContent = $m(sum(st.exit));
+    el('fmul').textContent = (sum(st.exit) / C).toFixed(2) + '×';
+  }
+  function afterDeals() { C = sum(st.cost); st.M = sum(st.exit) / C; el('m').value = st.M; update(); }
+  function field(id, ok, apply, get) {
+    const e = el(id);
+    e.addEventListener('input', () => {
+      const v = parse(e.value);
+      if (ok(v)) { e.removeAttribute('aria-invalid'); apply(v); } else e.setAttribute('aria-invalid', 'true');
+    });
+    e.addEventListener('change', () => { e.removeAttribute('aria-invalid'); e.value = fmtIn(get()); });
+    e.addEventListener('keydown', ev => { if (ev.key === 'Enter') e.blur(); });
+  }
+  const X_ICON = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>';
+  function buildDealRows() {
+    const esc = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    el('db').innerHTML = DEALS.map((d, i) => `<tr><td><input class="dname" id="name${i}" type="text" maxlength="40" autocomplete="off" spellcheck="false" value="${esc(st.names[i] || '')}" placeholder="Deal ${d}" aria-label="Name of deal ${d}"></td>` +
+      `<td><span class="money">$<input id="cost${i}" type="text" inputmode="decimal" autocomplete="off" aria-label="${esc(dn(i))} cost, $ millions">M</span></td>` +
+      `<td><span class="money">$<input id="exit${i}" type="text" inputmode="decimal" autocomplete="off" aria-label="${esc(dn(i))} exit value, $ millions">M</span></td>` +
+      `<td id="mul${i}"></td>` +
+      `<td class="rm"><button type="button" class="x" data-rm="${i}" aria-label="Remove ${esc(dn(i))}"${N === 1 ? ' disabled' : ''}>${X_ICON}</button></td></tr>`).join('');
+    for (let i = 0; i < N; i++) {
+      const nm = el('name' + i);
+      nm.addEventListener('input', () => { st.names[i] = nm.value.trim(); update(); });
+      nm.addEventListener('change', () => {
+        nm.value = st.names[i];
+        el('cost' + i).setAttribute('aria-label', `${dn(i)} cost, $ millions`);
+        el('exit' + i).setAttribute('aria-label', `${dn(i)} exit value, $ millions`);
+        el('db').querySelector(`[data-rm="${i}"]`).setAttribute('aria-label', `Remove ${dn(i)}`);
+      });
+      nm.addEventListener('keydown', ev => { if (ev.key === 'Enter') nm.blur(); });
+      field('cost' + i, v => v > 0, v => { st.cost[i] = v; afterDeals(); }, () => st.cost[i]);
+      field('exit' + i, v => v >= 0, v => { st.exit[i] = v; afterDeals(); }, () => st.exit[i]);
+    }
+    el('db').querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => removeDeal(+b.dataset.rm)));
+    el('addDeal').disabled = N >= MAXDEALS;
+    el('addHint').textContent = N >= MAXDEALS ? `Up to ${MAXDEALS} deals` : `${N} of ${MAXDEALS} deals`;
+  }
+  function rebuildDeals() { N = st.cost.length; DEALS = letters(N); buildLinks(); buildSvg(); buildDealRows(); }
+  // a new deal costs the average deal and returns the fund's current gross multiple
+  function addDeal() {
+    if (N >= MAXDEALS) return;
+    const cost = sum(st.cost) / N, mult = sum(st.exit) / sum(st.cost);
+    st.cost.push(cost); st.exit.push(cost * mult); st.names.push('');
+    rebuildDeals(); afterDeals();
+    const inp = el('cost' + (N - 1)); inp.focus(); inp.select();
+  }
+  function removeDeal(i) {
+    if (N <= 1) return;
+    st.cost.splice(i, 1); st.exit.splice(i, 1); st.names.splice(i, 1);
+    rebuildDeals(); afterDeals();
+    const nb = el('db').querySelector(`[data-rm="${Math.min(i, N - 1)}"]`);
+    (nb && !nb.disabled ? nb : el('addDeal')).focus();
+  }
+  el('addDeal').addEventListener('click', addDeal);
+  buildDealRows();
+  field('fund', v => v >= 1, v => {
+    const f = v / C;
+    st.cost = st.cost.map(x => x * f); st.exit = st.exit.map(x => x * f);
+    afterDeals();
+  }, () => C);
+  // the gross multiple slider rescales every exit, keeping their proportions
+  function rescaleExits(M) {
+    const w = sum(st.exit) > 1e-9 ? st.exit : st.cost.map((x, i) => x * (SHAPE[i] || 1));
+    const ws = sum(w) || 1, fund = sum(st.cost);
+    st.exit = w.map(x => x / ws * M * fund);
+    st.M = M;
+  }
+  el('m').addEventListener('input', () => { rescaleExits(+el('m').value); update(); });
+  el('resetDeals').addEventListener('click', () => {
+    st.cost = DEF_COST.slice(); st.exit = DEF_EXIT.slice(); st.names = DEF_COST.map(() => ''); st.M = DEF.M; el('m').value = DEF.M;
+    rebuildDeals();
+    update();
+  });
+  rescaleExits(+el('m').value);
+
+  /* ---------- simulation ---------- */
+  const NF = 3000, MAXD = 40;
+  // asset-class presets and the Monte Carlo itself live in src/simulation.js
+  const WKEYS = ['med', 'sigma', 'wo', 'rec', 'n', 'rho'];
+  const sw = { cls: 'buyout', seed: 1 };
+  WKEYS.forEach(kk => sw[kk] = PRESETS.buyout[kk]);
+  let simReady = false, simFirst = true, rainNext = false, sel = -1, hov = -1, simRaf = 0, simLast = 0;
+
+  // the draws are made once per seed; every dial reruns simulate() on the same draws
+  let draws, out, DM, G, EU, AM, EU0, WO, gSorted = new Float64Array(NF), lossWO = 0, lossPart = 0;
+  function newDraws(seed) {
+    draws = makeDraws(seed, NF, MAXD); out = makeResults(draws);
+    ({ dealMultiples: DM, multiple: G, euCarry: EU, amCarry: AM, euCarryNoCatchUp: EU0, writeOffs: WO } = out);
+  }
+  function simCompute() {
+    simulate(draws, sw, { hurdle: st.h / 100, years: st.T, catchUp: st.c / 100, carry: st.k / 100 }, out);
+    lossWO = out.lossWriteOff; lossPart = out.lossPartial;
+    gSorted = Float64Array.from(G).sort();
+  }
+  const qs = (arr, p) => arr[Math.floor(p * (arr.length - 1))];
+  function simStats() {
+    const cur = st.mode === 'eu' ? EU : AM, lp = new Float64Array(NF);
+    let zero = 0, sCur = 0, sEu = 0, sAm = 0, over = 0, overAmt = 0, cu = 0;
+    for (let f = 0; f < NF; f++) {
+      if (cur[f] < .05) zero++;
+      sCur += cur[f]; sEu += EU[f]; sAm += AM[f]; cu += EU[f] - EU0[f];
+      const d = AM[f] - EU[f]; if (d > .05) { over++; overAmt += d; }
+      lp[f] = (G[f] * 100 - cur[f]) / 100;
+    }
+    lp.sort();
+    return { zero: zero / NF, avg: sCur / NF, avgEu: sEu / NF, avgAm: sAm / NF, over: over / NF, overAvg: over ? overAmt / over : 0,
+      cu: cu / NF, lpMed: qs(lp, .5), lp10: qs(lp, .1), lp90: qs(lp, .9) };
+  }
+
+  /* chart state: dots tween in data space (log2 multiple, $M) */
+  const px = new Float32Array(NF), py = new Float32Array(NF), tx = new Float32Array(NF), ty = new Float32Array(NF);
+  const sx = new Float32Array(NF), sy = new Float32Array(NF);
+  const view = { x0: -2, x1: 2, y1: 40 }, viewT = { x0: -2, x1: 2, y1: 40 };
+  const niceStep = span => { const raw = span / 4, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p; };
+  function setTargets() {
+    const cur = st.mode === 'eu' ? EU : AM;
+    for (let f = 0; f < NF; f++) { tx[f] = Math.log2(Math.max(G[f], 1 / 8)); ty[f] = cur[f]; }
+    const top = Float64Array.from(EU, (v, f) => Math.max(v, AM[f])).sort();
+    const ymax = Math.max(10, qs(top, .99) * 1.06), stp = niceStep(ymax);
+    viewT.x0 = Math.max(-3, Math.min(-.35, Math.log2(Math.max(qs(gSorted, .005), 1 / 8)) - .2));
+    viewT.x1 = Math.max(1.2, Math.log2(qs(gSorted, .99)) + .15);
+    viewT.y1 = Math.ceil(ymax / stp) * stp;
+    if (simFirst) { px.set(tx); py.set(ty); Object.assign(view, viewT); simFirst = false; }
+    else if (rainNext) {
+      Object.assign(view, viewT);
+      for (let f = 0; f < NF; f++) { px[f] = tx[f]; py[f] = view.y1 * (1.08 + Math.random() * .5); }
+    }
+    rainNext = false;
+  }
+  function simTick(now) {
+    const dt = simLast ? Math.min(64, now - simLast) : 16; simLast = now;
+    const a = reduce ? 1 : 1 - Math.exp(-dt / 150);
+    let mv = false;
+    for (let f = 0; f < NF; f++) {
+      const ddx = tx[f] - px[f], ddy = ty[f] - py[f];
+      if (Math.abs(ddx) > .002 || Math.abs(ddy) > .02) { px[f] += ddx * a; py[f] += ddy * a; mv = true; }
+      else { px[f] = tx[f]; py[f] = ty[f]; }
+    }
+    for (const kk of ['x0', 'x1', 'y1']) {
+      const d = viewT[kk] - view[kk];
+      if (Math.abs(d) > 1e-3 * Math.max(1, Math.abs(viewT[kk]))) { view[kk] += d * a; mv = true; } else view[kk] = viewT[kk];
+    }
+    drawSim();
+    if (mv) simRaf = requestAnimationFrame(simTick); else { simRaf = 0; simLast = 0; }
+  }
+  function kickSim() { if (!simRaf) simRaf = requestAnimationFrame(simTick); }
+
+  const cv = el('simc'), ctx = cv.getContext('2d'), CH = 528;
+  function balloon(x, y, n, INK, PAPER, MONO) {
+    ctx.beginPath(); ctx.arc(x, y, 7.5, 0, Math.PI * 2); ctx.fillStyle = PAPER; ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = INK; ctx.font = `9.5px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(n, x, y + .5);
+  }
+  function drawSim() {
+    const W = cv.parentElement.clientWidth || 600, dpr = window.devicePixelRatio || 1;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(CH * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(CH * dpr); }
+    const cs = getComputedStyle(document.documentElement), tok = nm => cs.getPropertyValue(nm).trim();
+    const INK = tok('--ink'), GR = tok('--graphite'), RULE = tok('--rule'), PANEL = tok('--panel'), PAPER = tok('--paper'), MONO = tok('--mono');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = 1; ctx.fillStyle = PAPER; ctx.fillRect(0, 0, W, CH);
+    const narrow = W < 560;
+    const L = narrow ? 46 : 64, R = W - 16, T = 56, B = CH - 120;
+    const X = v => L + (v - view.x0) / (view.x1 - view.x0) * (R - L);
+    const Y = v => B - v / view.y1 * (B - T);
+    const h = st.h / 100, c = st.c / 100, k = st.k / 100, pref = Math.pow(1 + h, st.T) - 1;
+
+    // tier bands, numbered like Fig. 1
+    const b2 = Math.log2(1 + pref);
+    let b3 = b2;
+    if (c > 0 && c <= k) b3 = view.x1;
+    else if (c > k && pref > 0) b3 = Math.log2(1 + pref + k * pref / (c - k));
+    const bounds = [view.x0, 0, b2, b3, view.x1];
+    const names = ['Capital back', 'Hurdle', 'Catch-up', `${100 - st.k}/${st.k} split`];
+    for (let i = 0; i < 4; i++) {
+      const cl = v => Math.max(view.x0, Math.min(view.x1, v));
+      const a0 = X(cl(bounds[i])), a1 = X(cl(bounds[i + 1]));
+      if (a1 - a0 < .5) continue;
+      if (i % 2 === 0) { ctx.globalAlpha = .6; ctx.fillStyle = PANEL; ctx.fillRect(a0, T, a1 - a0, B - T); ctx.globalAlpha = 1; }
+      if (a1 - a0 < 18) continue;
+      ctx.font = `10px ${MONO}`;
+      const label = names[i].toUpperCase(), tw = ctx.measureText(label).width + label.length * 1;
+      const showName = a1 - a0 > tw + 34, mid = (a0 + a1) / 2, ly = T - 18;
+      const bx = showName ? mid - (tw + 20) / 2 + 7.5 : mid;
+      balloon(bx, ly, i + 1, INK, PAPER, MONO);
+      if (showName) {
+        ctx.fillStyle = INK; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = `10px ${MONO}`;
+        if ('letterSpacing' in ctx) ctx.letterSpacing = '1px';
+        ctx.fillText(label, bx + 13, ly + .5);
+        if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+      }
+    }
+
+    // y grid
+    const ys = niceStep(view.y1);
+    ctx.lineWidth = 1; ctx.font = `11px ${MONO}`; ctx.textBaseline = 'middle';
+    for (let v = 0; v <= view.y1 + 1e-6; v += ys) {
+      const y = Math.round(Y(v)) + .5;
+      ctx.strokeStyle = RULE; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(R, y); ctx.stroke();
+      ctx.fillStyle = GR; ctx.textAlign = 'right'; ctx.fillText('$' + (+v.toFixed(1)) + 'M', L - 8, y);
+    }
+    // x ticks at powers of two; 1x (cost) drawn darker
+    ctx.textAlign = 'center';
+    let lastTick = -1e9;
+    for (const m of [1, .125, .25, .5, .75, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32].map(v => v).sort((a, b) => a - b)) {
+      const e = Math.log2(m);
+      if (e < view.x0 - 1e-9 || e > view.x1 + 1e-9) continue;
+      const x = Math.round(X(e)) + .5;
+      if (x - lastTick < 44 && m !== 1) continue;
+      lastTick = x;
+      ctx.strokeStyle = RULE; ctx.globalAlpha = 1;
+      if (m === 1) { ctx.strokeStyle = INK; ctx.globalAlpha = .45; }
+      ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, B); ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.fillStyle = m === 1 ? INK : GR; ctx.fillText(m + '×', x, B + 14);
+    }
+    ctx.font = `10px ${MONO}`; ctx.fillStyle = GR;
+    ctx.textAlign = 'left'; ctx.fillText('GP CARRY, $M PER $100M FUND', L - (narrow ? 40 : 56), 14);
+    ctx.textAlign = 'right'; ctx.fillText('FUND GROSS MULTIPLE, LOG SCALE', R, B + 34);
+
+    // European curve and the funds
+    ctx.save(); ctx.beginPath(); ctx.rect(L, T - 3, R - L, B - T + 6); ctx.clip();
+    ctx.beginPath();
+    for (let i = 0; i <= 240; i++) {
+      const v = view.x0 + (view.x1 - view.x0) * i / 240, y = Y(gpOnly(Math.pow(2, v) * 100, 100, h, st.T, c, k));
+      i ? ctx.lineTo(X(v), y) : ctx.moveTo(X(v), y);
+    }
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.stroke();
+    const am = st.mode === 'am', pA = new Path2D(), pB = new Path2D();
+    for (let f = 0; f < NF; f++) {
+      const x = X(Math.max(view.x0, Math.min(px[f], view.x1))), y = Y(Math.min(py[f], view.y1));
+      sx[f] = x; sy[f] = y;
+      const p = am && AM[f] - EU[f] > .25 ? pB : pA;
+      p.moveTo(x + 2.1, y); p.arc(x, y, 2.1, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = GR; ctx.globalAlpha = am ? .3 : .4; ctx.fill(pA);
+    ctx.fillStyle = INK; ctx.globalAlpha = .78; ctx.fill(pB);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // marker for the selected or hovered fund
+    const mark = hov >= 0 ? hov : sel;
+    if (mark >= 0) {
+      const x = sx[mark], y = sy[mark];
+      ctx.setLineDash([3, 3]); ctx.strokeStyle = GR; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(x, y); ctx.moveTo(x, y); ctx.lineTo(x, B); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+
+    // where the funds land: histogram plus the middle 80%
+    const HB = Math.max(24, Math.min(60, Math.round((R - L) / 14))), bins = new Float32Array(HB);
+    for (let f = 0; f < NF; f++) {
+      const bi = Math.floor((Math.max(view.x0, Math.min(px[f], view.x1 - 1e-9)) - view.x0) / (view.x1 - view.x0) * HB);
+      bins[Math.max(0, Math.min(HB - 1, bi))]++;
+    }
+    const hy0 = B + 48, hy1 = CH - 36, bw = (R - L) / HB;
+    let bmax = 1; for (let i = 0; i < HB; i++) bmax = Math.max(bmax, bins[i]);
+    ctx.fillStyle = GR; ctx.globalAlpha = .4;
+    for (let i = 0; i < HB; i++) { const hh = bins[i] / bmax * (hy1 - hy0); ctx.fillRect(L + i * bw + .5, hy1 - hh, bw - 1, hh); }
+    ctx.globalAlpha = 1; ctx.strokeStyle = RULE; ctx.beginPath(); ctx.moveTo(L, hy1 + .5); ctx.lineTo(R, hy1 + .5); ctx.stroke();
+    const q10 = qs(gSorted, .1), q50 = qs(gSorted, .5), q90 = qs(gSorted, .9);
+    const xa = X(Math.max(view.x0, Math.log2(Math.max(q10, 1 / 8)))), xb = X(Math.min(view.x1, Math.log2(q90))), xm = X(Math.min(view.x1, Math.log2(q50)));
+    const by = CH - 24;
+    ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.beginPath();
+    ctx.moveTo(xa, by); ctx.lineTo(xb, by); ctx.moveTo(xa, by - 4); ctx.lineTo(xa, by + 4); ctx.moveTo(xb, by - 4); ctx.lineTo(xb, by + 4);
+    ctx.moveTo(xm, by - 7); ctx.lineTo(xm, by + 7); ctx.stroke();
+    ctx.font = `10px ${MONO}`; ctx.fillStyle = GR; ctx.textBaseline = 'middle';
+    const lab = `MIDDLE 80% ${q10.toFixed(2)}× TO ${q90.toFixed(2)}× · MEDIAN ${q50.toFixed(2)}×`;
+    const lw = ctx.measureText(lab).width;
+    ctx.textAlign = 'left'; ctx.fillText(lab, Math.max(L, Math.min(R - lw, xm - lw / 2)), CH - 9);
+  }
+
+  /* panels */
+  const statCell = (a, b, c2) => `<div class="stat"><dt>${a}</dt><dd class="v">${b}</dd><dd class="s">${c2}</dd></div>`;
+  function renderStats() {
+    const S = simStats(), am = st.mode === 'am', hasCu = st.c > 0 && st.h > 0;
+    el('wLoss').innerHTML = `<b>${pct(lossWO + lossPart, 0)}</b> of deals return less than cost: ${pct(lossWO, 0)} written off, ${pct(lossPart, 0)} sold at a partial loss.`;
+    el('sstats').innerHTML =
+      statCell('No carry', pct(S.zero, 0), 'of funds pay the GP nothing') +
+      statCell('Average carry', $m(S.avg), `${am ? 'European' : 'American'}: ${$m(am ? S.avgEu : S.avgAm)}`) +
+      statCell('American overpays', pct(S.over, 0), S.over > .005 ? `of funds, by ${$m(S.overAvg)} on average` : 'of funds') +
+      statCell('LP net multiple', S.lpMed.toFixed(2) + '×', `median · middle 80% ${S.lp10.toFixed(2)}–${S.lp90.toFixed(2)}×`) +
+      statCell('Catch-up worth', hasCu ? $m(S.cu) : '—', hasCu ? 'to the GP vs. none, on average' : 'No catch-up in these terms');
+    el('stake').textContent = am
+      ? (S.over > .01
+        ? `Under American terms the dots scatter above the line. In ${pct(S.over, 0)} of these funds the GP collects more than a whole-fund waterfall would pay, ${$m(S.overAvg)} on average, and a clawback would have to recover it.`
+        : `Under American terms these funds stay close to the line, so deal-by-deal and whole-fund pay about the same.`)
+      : `Under European terms every dot sits on the line, because the GP's carry depends only on the fund's total. In ${pct(S.zero, 0)} of these funds the GP earns no carry at all.`;
+    const nm = PRESETS[sw.cls].name;
+    el('simcap').textContent = `Fig. 2 · 3,000 simulated $100M ${nm} funds, ${am ? 'American' : 'European'} terms. Hover or tap a dot to see its deals.`;
+    cv.setAttribute('aria-label', `Scatter of 3,000 simulated ${nm} funds by gross multiple and GP carry. Median gross ${qs(gSorted, .5).toFixed(2)}×; ${pct(S.zero, 0)} pay no carry; average carry ${$m(S.avg)}.`);
+  }
+  const numRow = (a, b) => `<div><dt>${a}</dt><dd>${b}</dd></div>`;
+  function renderPick(f) {
+    if (f < 0) return;
+    const n = sw.n, deals = Array.from(DM.subarray(f * MAXD, f * MAXD + n)).sort((x, y) => y - x);
+    const cur = st.mode === 'eu' ? EU[f] : AM[f];
+    el('pkL').textContent = hov >= 0 && hov !== sel ? 'Hovered fund · click to keep it' : 'Selected fund';
+    el('pkT').textContent = `Fund ${String(f + 1).padStart(4, '0')} · ${G[f].toFixed(2)}× gross`;
+    el('pkS').textContent = `${n} deals · ${WO[f]} written off · best deal ${deals[0].toFixed(1)}×`;
+    const top = Math.max(3, deals[0]), lt = Math.log(1 + top);
+    el('pkStrip').innerHTML = deals.map(x => `<span class="bar${x < 1 ? ' lo' : ''}" style="height:${Math.max(2, Math.log(1 + x) / lt * 100).toFixed(1)}%"></span>`).join('') +
+      `<span class="one" style="bottom:${(Math.log(2) / lt * 100).toFixed(1)}%"><i>1×</i></span>`;
+    el('pkN').innerHTML = numRow('European carry', $m(EU[f])) + numRow('American carry', $m(AM[f])) +
+      numRow('Clawback', $m(Math.max(0, AM[f] - EU[f]))) + numRow(`LP net, ${st.mode === 'eu' ? 'European' : 'American'}`, ((G[f] * 100 - cur) / 100).toFixed(2) + '×');
+  }
+  function pickBy(kind) {
+    let best = 0;
+    if (kind === 'median') { const m = qs(gSorted, .5); for (let f = 1; f < NF; f++) if (Math.abs(G[f] - m) < Math.abs(G[best] - m)) best = f; }
+    else for (let f = 1; f < NF; f++) {
+      if (kind === 'best' && G[f] > G[best]) best = f;
+      if (kind === 'worst' && G[f] < G[best]) best = f;
+      if (kind === 'claw' && AM[f] - EU[f] > AM[best] - EU[best]) best = f;
+    }
+    return best;
+  }
+  function simOnChange() {
+    simCompute();
+    setTargets();
+    if (sel < 0) sel = pickBy('median');
+    renderStats();
+    renderPick(hov >= 0 ? hov : sel);
+    if (reduce) { px.set(tx); py.set(ty); Object.assign(view, viewT); drawSim(); } else kickSim();
+  }
+
+  /* controls */
+  function syncTermInputs() {
+    const act = document.activeElement;
+    [['h', 'sh', 'hO', 'shO'], ['c', 'sc', 'cO', 'scO'], ['k', 'sK', 'kO', 'skO'], ['t', 'sT', 'tO', 'sTO']].forEach(([a, b, ao, bo]) => {
+      if (el(b) !== act) el(b).value = el(a).value;
+      el(bo).textContent = el(ao).textContent;
+    });
+    el('scH').textContent = el('cHint').textContent;
+    el('sEu').setAttribute('aria-pressed', st.mode === 'eu');
+    el('sAm').setAttribute('aria-pressed', st.mode === 'am');
+  }
+  function syncWorldInputs() {
+    const act = document.activeElement, P = PRESETS[sw.cls];
+    [['wMed', 'med'], ['wSig', 'sigma'], ['wWo', 'wo'], ['wRec', 'rec'], ['wN', 'n'], ['wRho', 'rho']].forEach(([id, key]) => { if (el(id) !== act) el(id).value = sw[key]; });
+    el('wMedO').textContent = sw.med.toFixed(2) + '×';
+    el('wSigO').textContent = sw.sigma < .45 ? 'Tight' : sw.sigma < .9 ? 'Moderate' : sw.sigma < 1.3 ? 'Wide' : 'Extreme';
+    el('wSigH').textContent = `1 surviving deal in 10 returns ${(sw.med * Math.exp(1.2816 * sw.sigma)).toFixed(1)}× or more`;
+    el('wWoO').textContent = sw.wo + '%';
+    el('wWoH').textContent = `Total losses, recovering 0 to ${sw.rec.toFixed(2)}×`;
+    el('wRecO').textContent = sw.rec.toFixed(2) + '×';
+    el('wNO').textContent = sw.n;
+    el('wRhoO').textContent = sw.rho + '%';
+    document.querySelectorAll('[data-cls]').forEach(b => b.setAttribute('aria-pressed', b.dataset.cls === sw.cls));
+    const edited = WKEYS.some(kk => sw[kk] !== P[kk]);
+    el('pBlurb').textContent = edited ? `Dials changed from the ${P.name} defaults.` : P.blurb;
+    el('resetWorld').textContent = `Reset ${P.name} defaults`;
+  }
+  function applyPreset(cls) {
+    const P = PRESETS[cls];
+    sw.cls = cls; WKEYS.forEach(kk => sw[kk] = P[kk]);
+    Object.assign(st, { h: P.h, c: P.c, k: P.k, T: P.T });
+    el('h').value = P.h; el('c').value = P.c; el('k').value = P.k; el('t').value = P.T;
+    rainNext = true; sel = -1;
+    syncWorldInputs();
+    update();
+  }
+  document.querySelectorAll('[data-cls]').forEach(b => b.addEventListener('click', () => applyPreset(b.dataset.cls)));
+  el('resetWorld').addEventListener('click', () => applyPreset(sw.cls));
+  el('newDraw').addEventListener('click', () => { sw.seed++; newDraws(sw.seed); rainNext = true; sel = -1; simOnChange(); });
+  [['sh', 'h', 'h'], ['sc', 'c', 'c'], ['sK', 'k', 'k'], ['sT', 't', 'T']].forEach(([id, main, key]) =>
+    el(id).addEventListener('input', () => { st[key] = +el(id).value; el(main).value = el(id).value; update(); }));
+  el('sEu').addEventListener('click', () => { st.mode = 'eu'; update(); });
+  el('sAm').addEventListener('click', () => { st.mode = 'am'; update(); });
+  [['wMed', 'med'], ['wSig', 'sigma'], ['wWo', 'wo'], ['wRec', 'rec'], ['wN', 'n'], ['wRho', 'rho']].forEach(([id, key]) =>
+    el(id).addEventListener('input', () => { sw[key] = +el(id).value; syncWorldInputs(); simOnChange(); }));
+  document.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => {
+    sel = pickBy(b.dataset.pick); hov = -1; renderPick(sel); if (!simRaf) drawSim();
+  }));
+  const nearest = (mx, my) => { let best = -1, bd = 144; for (let f = 0; f < NF; f++) { const dx = sx[f] - mx, dy = sy[f] - my, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = f; } } return best; };
+  cv.addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch') return;
+    const r = cv.getBoundingClientRect(), f = nearest(e.clientX - r.left, e.clientY - r.top);
+    if (f !== hov) { hov = f; renderPick(hov >= 0 ? hov : sel); if (!simRaf) drawSim(); }
+  });
+  cv.addEventListener('pointerleave', () => { hov = -1; renderPick(sel); if (!simRaf) drawSim(); });
+  cv.addEventListener('click', e => {
+    const r = cv.getBoundingClientRect(), f = nearest(e.clientX - r.left, e.clientY - r.top);
+    if (f >= 0) { sel = f; hov = -1; renderPick(sel); if (!simRaf) drawSim(); }
+  });
+  if ('ResizeObserver' in window) new ResizeObserver(() => { if (!simRaf) drawSim(); }).observe(cv.parentElement);
+  if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => drawSim());
+  new MutationObserver(() => drawSim()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  newDraws(sw.seed);
+  syncWorldInputs();
+  simReady = true;
+
+  /* ---------- tabs ---------- */
+  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  function showTab(id, focus) {
+    tabs.forEach(t => {
+      const on = t.getAttribute('aria-controls') === id;
+      t.setAttribute('aria-selected', on);
+      t.tabIndex = on ? 0 : -1;
+      el(t.getAttribute('aria-controls')).hidden = !on;
+      if (on && focus) t.focus();
+    });
+    try { history.replaceState(null, '', '#' + id); } catch (e) {}
+    const top = el('tabsTop').getBoundingClientRect().top;
+    if (top < 0) window.scrollTo(0, window.scrollY + top);
+    if (id === 'simulation') drawSim(); else draw(disp);
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => showTab(t.getAttribute('aria-controls')));
+    t.addEventListener('keydown', e => {
+      const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (d) { e.preventDefault(); showTab(tabs[(i + d + tabs.length) % tabs.length].getAttribute('aria-controls'), true); }
+    });
+  });
+  const fromHash = () => { const hsh = location.hash.slice(1); if (hsh === 'simulation' || hsh === 'waterfall') showTab(hsh); };
+  addEventListener('hashchange', fromHash);
+
+  update(true);
+  fromHash();
+  if ('ResizeObserver' in window) new ResizeObserver(() => { if (!raf) draw(disp); }).observe(stage);
+  else addEventListener('resize', () => draw(disp));
+})();
+</script>
+
+</body></html>
